@@ -91,7 +91,10 @@ function __bobthefish_git_branch -S -d 'Get the current git branch (or commitish
         # truncate the middle of the branch name, but only if it's 25+ characters
         set -l truncname $branch
         [ "$theme_use_abbreviated_branch_name" = 'yes' ]
-        and set truncname (string replace -r '^(.{17}).{3,}(.{5})$' "\$1…\$2" $branch)
+        and set truncname (string replace -r '^(.{7}).{3,}(.{15})$' "\$1…\$2" $branch)
+
+        [ "$theme_use_pretty_branch_name" = 'yes' ]
+        and set truncname (__bobthefish_pretty_parent $branch)(__bobthefish_basename $branch)
 
         echo $branch_glyph $truncname
         and return
@@ -299,11 +302,11 @@ function __bobthefish_git_ahead_verbose -S -d 'Print a more verbose ahead/behind
         case '0 0' # equal to upstream
             return
         case '* 0' # ahead of upstream
-            echo "$git_ahead_glyph$ahead"
+            echo " $git_ahead_glyph$ahead"
         case '0 *' # behind upstream
-            echo "$git_behind_glyph$behind"
+            echo " $git_behind_glyph$behind"
         case '*' # diverged from upstream
-            echo "$git_ahead_glyph$ahead$git_behind_glyph$behind"
+            echo " $git_ahead_glyph$ahead $git_behind_glyph$behind"
     end
 end
 
@@ -978,14 +981,16 @@ function __bobthefish_prompt_git -S -a git_root_dir -a real_pwd -d 'Display the 
     if [ "$theme_display_git_dirty" != 'no' ]
         set -l show_dirty (command git config --bool bash.showDirtyState 2>/dev/null)
         if [ "$show_dirty" != 'false' ]
-            set dirty (command git diff --no-ext-diff --quiet --exit-code 2>/dev/null; or echo -n "$git_dirty_glyph")
+            set -l unstaged_numfiles (command git diff --name-only 2>/dev/null | wc -l | string trim)
+            set dirty (command git diff --no-ext-diff --quiet --exit-code 2>/dev/null; or echo -n " $git_dirty_glyph$unstaged_numfiles")
             if [ "$dirty" -a "$theme_display_git_dirty_verbose" = 'yes' ]
                 set dirty "$dirty"(__bobthefish_git_dirty_verbose)
             end
         end
     end
 
-    set -l staged (command git diff --cached --no-ext-diff --quiet --exit-code 2>/dev/null; or echo -n "$git_staged_glyph")
+    set -l staged_numfiles (command git diff --name-only --cached HEAD 2>/dev/null | wc -l | string trim)
+    set -l staged (command git diff --cached --no-ext-diff --quiet --exit-code 2>/dev/null; or echo -n " $git_staged_glyph$staged_numfiles")
     set -l stashed (__bobthefish_git_stashed)
     set -l ahead (__bobthefish_git_ahead)
 
@@ -993,17 +998,19 @@ function __bobthefish_prompt_git -S -a git_root_dir -a real_pwd -d 'Display the 
     if [ "$theme_display_git_untracked" != 'no' ]
         set -l show_untracked (command git config --bool bash.showUntrackedFiles 2>/dev/null)
         if [ "$show_untracked" != 'false' ]
-            set new (command git ls-files --other --exclude-standard --directory --no-empty-directory 2>/dev/null)
-            if [ "$new" ]
-                set new "$git_untracked_glyph"
+            set new (command git ls-files --other --exclude-standard --directory --no-empty-directory 2>/dev/null | wc -l | string trim)
+            if [ "$new" -gt "0" ]
+                set new " $git_untracked_glyph$new"
+            else 
+                set new ""
             end
         end
     end
 
-    set -l flags "$dirty$staged$stashed$ahead$new"
+    set -l flags "$dirty$staged$new$ahead"
 
     [ "$flags" ]
-    and set flags " $flags"
+    and set flags "$flags"
 
     set -l flag_colors $color_repo
     if [ "$dirty" ]
